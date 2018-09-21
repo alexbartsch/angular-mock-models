@@ -43,7 +43,7 @@ if (!fs.existsSync(dstPath)){
 
 
 
-const interfaces = [];
+const interfaces = new Map();
 
 const propertyLineRe = /^\s*(\w+)[\s?:]*(\w+)([\[\]]*);$/im;
 const classLineRe = /^export\s+interface\s+(\w*).*$/i;
@@ -54,10 +54,31 @@ const classLineRe = /^export\s+interface\s+(\w*).*$/i;
 
 
 
-const generateValue = (type, propertyName) => {
-    let value = null;
+const parseImports = (i) => {
+    const interfaceImports = `import { ${i.name} } from '${i.path}';`;
+    const mockImports = i.properties
+        .filter(isNoPrimitiveDataType)
+        .map(x => `import { mock${x.type}1 } from './${x.type}.stubs.ts';`)
+        .join('\n');
 
-    switch (propertyName) {
+    return `${interfaceImports}\n${mockImports}`;
+};
+
+const isNoPrimitiveDataType = (x) => {
+    return x.type !== 'number' && x.type !== 'boolean' && x.type !== 'string' && x.type !== 'any';
+}
+
+const parseProperties = (properties) => {
+    return properties
+        .map(x => `${x.name}: ${generateValue(x)}`)
+        .join(',\n\t');
+};
+
+const generateValue = (property) => {
+    let value = null;
+    let type = property.type;
+
+    switch (property.name) {
         case 'dateOfBirth':
         case 'expiration':
         case 'createdAt':
@@ -128,30 +149,25 @@ const generateValue = (type, propertyName) => {
         case 'Date':
             value = `'${moment(faker.date.recent()).format('YYYY-MM-DD')}'`;
         break;
+        case 'null':
+            value = 'null';
+        break;
         default:
-            console.log('Property type not found ' + type);
+            value = `mock${property.type}1`;
     }
 
-    return value;
-};
-
-const parseProperties = (properties) => {
-    return properties.map(x => `${x.name}: ${generateValue(x.type, x.name)}`).join(",\n\t");
+    return `${property.isArray ? '[ ' : ''}${isNoPrimitiveDataType(property) ? '{... ' : ''}${value}${isNoPrimitiveDataType(property) ? ' }' : ''}${property.isArray ? ' ]' : ''}`;
 };
 
 const createMockData = async () => {
-    await Promise.all(
-        interfaces.map(async (i) => {
-            const filepath = dstPath + '/' + i.name + '.stubs.ts';
-            const fileContent = `
-export const mock${i.name}1: ${i.name} {
-    ${parseProperties(i.properties)}
-};
+    const interfacesArr = Array.from(interfaces);
 
-export const mock${i.name}2: ${i.name} {
-    ${parseProperties(i.properties)}
-};
-`;
+    await Promise.all(
+        interfacesArr.map(async ([k, i]) => {
+            const filepath = dstPath + '/' + i.name + '.stubs.ts';
+            const fileContent = `${parseImports(i)}
+
+export const mock${i.name}1: ${i.name} {\n\t${parseProperties(i.properties)}\n};`;
 
             await fs.writeFile(filepath, fileContent, (err) => {
                 if (err) {
@@ -181,6 +197,7 @@ const composeInterfaceData = () => new Promise((done, err) => {
     find.eachfile(/\.interface\.ts$/, srcPath, (file) => {
         var interfaceName = '';
         var interfaceProperties = [];
+        var interfacePath = file;
 
         var lr = new LineByLineReader(file);
         lr.on('line', (line) => {
@@ -202,8 +219,9 @@ const composeInterfaceData = () => new Promise((done, err) => {
 
         lr.on('end', () => {
             if (interfaceName != '') {
-                interfaces.push({
+                interfaces.set(interfaceName, {
                     name: interfaceName,
+                    path: interfacePath,
                     properties: interfaceProperties
                 });
 
