@@ -1,3 +1,4 @@
+const argv = require('minimist')(process.argv.slice(2));
 const find = require('find');
 const LineByLineReader = require('line-by-line');
 const fs = require('fs');
@@ -6,8 +7,42 @@ const moment = require('moment');
 const faker = require('faker');
 faker.locale = "de";
 
-const srcPath = __dirname + '/../spt/projects/frontend';
-const dstPath = __dirname + '/tmp/';
+
+
+/* ---- */
+
+
+
+let srcPath;
+if (!argv['src']) {
+    console.error('No source path set. Example: "--src=/path/to/soruce/files"');
+    process.exit(1);
+} else {
+    srcPath = argv['src'];
+}
+
+if (!fs.existsSync(srcPath)){
+    console.error('Source path does not exist.');
+    process.exit(1);
+}
+
+let dstPath;
+if (argv['dst']) {
+    dstPath = argv['dst'];
+} else {
+    dstPath = __dirname + '/tmp'
+}
+
+if (!fs.existsSync(dstPath)){
+    fs.mkdirSync(dstPath);
+}
+
+
+
+/* ---- */
+
+
+
 const interfaces = [];
 
 const propertyLineRe = /^\s*(\w+)[\s?:]*(\w+)([\[\]]*);$/im;
@@ -107,7 +142,7 @@ const parseProperties = (properties) => {
 const createMockData = async () => {
     await Promise.all(
         interfaces.map(async (i) => {
-            const filepath = dstPath + i.name + '.stubs.ts';
+            const filepath = dstPath + '/' + i.name + '.stubs.ts';
             const fileContent = `
 export const mock${i.name}1: ${i.name} {
     ${parseProperties(i.properties)}
